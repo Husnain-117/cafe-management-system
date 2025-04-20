@@ -1,0 +1,78 @@
+name: Cafe Management System Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # Simple test to verify workspace
+      - name: List workspace contents
+        run: |
+          echo "Workspace contents:"
+          ls -la
+          echo "Current directory: $PWD"
+
+      # Build Docker images
+      - name: Build with Docker Compose
+        run: |
+          echo "Building services..."
+          docker compose build --no-cache
+          echo "Docker images:"
+          docker images
+
+      # Start services and test
+      - name: Test services
+        run: |
+          echo "Starting services..."
+          docker compose up -d
+          echo "Waiting for services to start..."
+          sleep 30
+          echo "Service status:"
+          docker compose ps
+          echo "Testing API Gateway..."
+          curl -v http://localhost:3000/health || true
+
+      # Save logs regardless of previous step results
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p ./logs
+          echo "Docker Compose Logs:" > ./logs/all.log
+          docker compose logs >> ./logs/all.log
+          echo "Docker Images:" >> ./logs/all.log
+          docker images >> ./logs/all.log
+          echo "Docker Compose PS:" >> ./logs/all.log
+          docker compose ps >> ./logs/all.log
+
+      # Upload logs as artifacts
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: service-logs
+          path: ./logs/all.log
+
+      # Clean up
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up..."
+          docker compose down
+          docker system prune -f 
