@@ -140,21 +140,25 @@ jobs:
           push_service "inventory-service"
           push_service "customer-service"
 
+      # Create artifacts directory
+      - name: Create artifacts directory
+        if: always()
+        run: mkdir -p ${{ github.workspace }}/artifacts
+
       # Save logs regardless of previous step results
       - name: Collect logs
         if: always()
         run: |
-          mkdir -p ./logs
-          echo "Docker Compose Logs:" > ./logs/all.log
-          docker compose logs >> ./logs/all.log 2>&1
-          echo "Docker Images:" >> ./logs/all.log
-          docker images >> ./logs/all.log 2>&1
-          echo "Docker Compose PS:" >> ./logs/all.log
-          docker compose ps >> ./logs/all.log 2>&1
-          echo "Docker System Info:" >> ./logs/all.log
-          docker info >> ./logs/all.log 2>&1
-          echo "Directory Structure:" >> ./logs/all.log
-          ls -R >> ./logs/all.log 2>&1
+          echo "Docker Compose Logs:" > ${{ github.workspace }}/artifacts/all.log
+          docker compose logs >> ${{ github.workspace }}/artifacts/all.log 2>&1
+          echo "Docker Images:" >> ${{ github.workspace }}/artifacts/all.log
+          docker images >> ${{ github.workspace }}/artifacts/all.log 2>&1
+          echo "Docker Compose PS:" >> ${{ github.workspace }}/artifacts/all.log
+          docker compose ps >> ${{ github.workspace }}/artifacts/all.log 2>&1
+          echo "Docker System Info:" >> ${{ github.workspace }}/artifacts/all.log
+          docker info >> ${{ github.workspace }}/artifacts/all.log 2>&1
+          echo "Directory Structure:" >> ${{ github.workspace }}/artifacts/all.log
+          ls -R >> ${{ github.workspace }}/artifacts/all.log 2>&1
 
       # Upload logs as artifacts
       - name: Upload logs
@@ -162,7 +166,8 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: service-logs
-          path: ./logs/all.log
+          path: ${{ github.workspace }}/artifacts/
+          retention-days: 5
 
       # Clean up
       - name: Cleanup
