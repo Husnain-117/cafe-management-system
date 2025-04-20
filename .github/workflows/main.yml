@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -17,37 +21,83 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
-          node-version: '18'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Simple test to verify workspace
-      - name: List workspace contents
+      - name: Convert repository owner to lowercase
         run: |
-          echo "Workspace contents:"
-          ls -la
-          echo "Current directory: $PWD"
+          echo "OWNER_LC=${IMAGE_PREFIX,,}" >> $GITHUB_ENV
 
-      # Build Docker images
-      - name: Build with Docker Compose
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # Build each service
+      - name: Build API Gateway
         run: |
-          echo "Building services..."
-          docker compose build --no-cache
-          echo "Docker images:"
-          docker images
+          docker build -t ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/api-gateway:latest ./api-gateway
+
+      - name: Build Menu Service
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/menu-service:latest ./menu-services
+
+      - name: Build Order Service
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/order-service:latest ./order-services
+
+      - name: Build Payment Service
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/payment-service:latest ./payment-services
+
+      - name: Build Inventory Service
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/inventory-service:latest ./inventory-services
+
+      - name: Build Customer Service
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/customer-service:latest ./customer-services
+
+      - name: List built images
+        run: |
+          echo "Listing all built Docker images:"
+          docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER_LC }}"
 
       # Start services and test
-      - name: Test services
+      - name: Start services
         run: |
           echo "Starting services..."
           docker compose up -d
           echo "Waiting for services to start..."
           sleep 30
-          echo "Service status:"
-          docker compose ps
+
+      - name: Test services
+        run: |
           echo "Testing API Gateway..."
           curl -v http://localhost:3000/health || true
+          echo "Testing Menu Service..."
+          curl -v http://localhost:3001/health || true
+          echo "Testing Order Service..."
+          curl -v http://localhost:3002/health || true
+          echo "Testing Payment Service..."
+          curl -v http://localhost:3003/health || true
+          echo "Testing Inventory Service..."
+          curl -v http://localhost:3004/health || true
+          echo "Testing Customer Service..."
+          curl -v http://localhost:3005/health || true
+
+      # Push images if on main branch
+      - name: Push images
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/api-gateway:latest
+          docker push ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/menu-service:latest
+          docker push ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/order-service:latest
+          docker push ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/payment-service:latest
+          docker push ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/inventory-service:latest
+          docker push ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/customer-service:latest
 
       # Save logs regardless of previous step results
       - name: Collect logs
