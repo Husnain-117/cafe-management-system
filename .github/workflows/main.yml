@@ -14,7 +14,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # Required for fallback upload
       packages: write
       actions: write
 
@@ -41,8 +41,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install curl
-        run: sudo apt-get update && sudo apt-get install -y curl
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl zip unzip
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
 
       - name: Convert repository owner to lowercase
         run: |
@@ -164,13 +170,56 @@ jobs:
           echo "=== Service Status ===" > logs/status.log
           docker compose ps > logs/status.log 2>&1
 
-      # Upload artifacts
-      - uses: actions/upload-artifact@v3
-        if: always()
+          # Create a summary file
+          {
+            echo "# Workflow Run Summary"
+            echo "## Build Information"
+            echo "- Run ID: ${{ github.run_id }}"
+            echo "- Run Number: ${{ github.run_number }}"
+            echo "- Workflow: ${{ github.workflow }}"
+            echo "- Repository: ${{ github.repository }}"
+            echo "- Branch: ${{ github.ref }}"
+            echo "- Commit: ${{ github.sha }}"
+          } > logs/summary.md
+
+          # Create ZIP archive
+          zip -r workflow-logs.zip logs/
+
+      # Try primary upload method
+      - name: Upload artifacts (Primary)
+        id: upload-primary
+        continue-on-error: true
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v3.1.2
         with:
           name: workflow-logs
           path: logs/
           retention-days: 5
+
+      # Fallback to v2 if v3 fails
+      - name: Upload artifacts (Fallback v2)
+        if: steps.upload-primary.outcome == 'failure'
+        id: upload-fallback-v2
+        continue-on-error: true
+        uses: actions/upload-artifact@v2
+        with:
+          name: workflow-logs
+          path: logs/
+
+      # Final fallback using GitHub CLI
+      - name: Upload artifacts (Final Fallback)
+        if: steps.upload-primary.outcome == 'failure' && steps.upload-fallback-v2.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create a release if we're on main branch
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAG_NAME="workflow-${GITHUB_RUN_ID}"
+            gh release create $TAG_NAME workflow-logs.zip \
+              --title "Workflow Run ${GITHUB_RUN_NUMBER} Artifacts" \
+              --notes "Artifacts from workflow run ${GITHUB_RUN_NUMBER}"
+          else
+            echo "Not uploading artifacts via release as this is not the main branch"
+          fi
 
       # Clean up
       - name: Cleanup
