@@ -60,7 +60,7 @@ jobs:
           build_service "customer-service" "./customer-services"
 
       - name: List built images
-        run: |
+        run:  |
           echo "Listing all built Docker images:"
           docker images | grep "${{ env.REGISTRY }}/${{ env.OWNER_LC }}"
 
