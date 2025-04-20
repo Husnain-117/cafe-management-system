@@ -22,6 +22,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Convert owner to lowercase
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >> $GITHUB_ENV
+
       - name: Log in to the Container registry
         uses: docker/login-action@v2
         with:
@@ -36,14 +40,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/cafe-management
+          images: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/cafe-management
 
       - name: Build and push API Gateway
         uses: docker/build-push-action@v4
         with:
           context: ./api-gateway
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/api-gateway:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/api-gateway:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push Menu Service
@@ -51,7 +55,7 @@ jobs:
         with:
           context: ./menu-services
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/menu-service:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/menu-service:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push Order Service
@@ -59,7 +63,7 @@ jobs:
         with:
           context: ./order-services
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/order-service:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/order-service:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push Payment Service
@@ -67,7 +71,7 @@ jobs:
         with:
           context: ./payment-services
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/payment-service:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/payment-service:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push Inventory Service
@@ -75,7 +79,7 @@ jobs:
         with:
           context: ./inventory-services
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/inventory-service:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/inventory-service:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push Customer Service
@@ -83,10 +87,10 @@ jobs:
         with:
           context: ./customer-services
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/customer-service:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/customer-service:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Check images
         if: github.event_name != 'pull_request'
         run: |
-          docker images | grep ${{ env.REGISTRY }}/${{ env.OWNER }} 
+          docker images | grep ${{ env.REGISTRY }}/${{ env.OWNER_LC }} 

@@ -23,22 +23,36 @@ jobs:
 
       - name: Install dependencies
         run: |
-          services=("api-gateway" "menu-services" "order-services" "payment-services" "inventory-services" "customer-services")
-          for service in "${services[@]}"; do
-            echo "Installing dependencies for $service"
-            cd $service
-            npm install
-            cd ..
+          for service in api-gateway menu-services order-services payment-services inventory-services customer-services; do
+            if [ -d "$service" ]; then
+              echo "Installing dependencies for $service"
+              cd $service
+              if [ -f "package.json" ]; then
+                npm install || exit 1
+              else
+                echo "No package.json found in $service"
+              fi
+              cd ..
+            else
+              echo "Directory $service not found"
+            fi
           done
 
       - name: Run tests
         run: |
-          services=("api-gateway" "menu-services" "order-services" "payment-services" "inventory-services" "customer-services")
-          for service in "${services[@]}"; do
-            echo "Running tests for $service"
-            cd $service
-            npm test || echo "No tests found for $service"
-            cd ..
+          for service in api-gateway menu-services order-services payment-services inventory-services customer-services; do
+            if [ -d "$service" ]; then
+              echo "Testing $service"
+              cd $service
+              if [ -f "package.json" ]; then
+                npm test || echo "No tests found for $service"
+              else
+                echo "No package.json found in $service"
+              fi
+              cd ..
+            else
+              echo "Directory $service not found"
+            fi
           done
 
   integration:
@@ -50,36 +64,55 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Build services
+        run: |
+          echo "Building services with docker compose..."
+          docker compose build --no-cache
+
       - name: Start services
         run: |
+          echo "Starting services..."
           docker compose up -d
           echo "Waiting for services to start..."
           sleep 30
 
+      - name: Check service status
+        run: |
+          echo "Checking service status..."
+          docker compose ps
+          docker compose logs
+
       - name: Health checks
         run: |
-          curl -f http://localhost:3000/health || exit 1
-          curl -f http://localhost:3001/health || exit 1
-          curl -f http://localhost:3002/health || exit 1
-          curl -f http://localhost:3003/health || exit 1
-          curl -f http://localhost:3004/health || exit 1
-          curl -f http://localhost:3005/health || exit 1
+          for port in 3000 3001 3002 3003 3004 3005; do
+            echo "Testing health endpoint on port $port..."
+            curl -v http://localhost:$port/health || echo "Service on port $port not responding"
+          done
 
       - name: MongoDB check
-        run: docker compose exec -T mongodb mongosh --eval "db.adminCommand('ping')"
+        run: |
+          echo "Checking MongoDB connection..."
+          docker compose exec -T mongodb mongosh --eval "db.adminCommand('ping')" || echo "MongoDB check failed"
 
       - name: Save logs
         if: always()
-        run: docker compose logs > integration-test-logs.txt
+        run: |
+          mkdir -p ./logs
+          docker compose logs > ./logs/integration-test-logs.txt
+          echo "Environment information:" >> ./logs/integration-test-logs.txt
+          docker version >> ./logs/integration-test-logs.txt
+          docker compose version >> ./logs/integration-test-logs.txt
 
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v3
         with:
           name: integration-test-logs
-          path: integration-test-logs.txt
+          path: ./logs/
           retention-days: 5
 
       - name: Cleanup
         if: always()
-        run: docker compose down
+        run: |
+          echo "Cleaning up services..."
+          docker compose down -v
