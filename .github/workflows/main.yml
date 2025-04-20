@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}
+  ARTIFACT_DIR: ${{ github.workspace }}/artifacts
 
 jobs:
   build-and-test:
@@ -140,34 +141,94 @@ jobs:
           push_service "inventory-service"
           push_service "customer-service"
 
-      # Create artifacts directory
-      - name: Create artifacts directory
-        if: always()
-        run: mkdir -p ${{ github.workspace }}/artifacts
-
-      # Save logs regardless of previous step results
-      - name: Collect logs
+      # Create organized artifact directory structure
+      - name: Create artifacts directory structure
         if: always()
         run: |
-          echo "Docker Compose Logs:" > ${{ github.workspace }}/artifacts/all.log
-          docker compose logs >> ${{ github.workspace }}/artifacts/all.log 2>&1
-          echo "Docker Images:" >> ${{ github.workspace }}/artifacts/all.log
-          docker images >> ${{ github.workspace }}/artifacts/all.log 2>&1
-          echo "Docker Compose PS:" >> ${{ github.workspace }}/artifacts/all.log
-          docker compose ps >> ${{ github.workspace }}/artifacts/all.log 2>&1
-          echo "Docker System Info:" >> ${{ github.workspace }}/artifacts/all.log
-          docker info >> ${{ github.workspace }}/artifacts/all.log 2>&1
-          echo "Directory Structure:" >> ${{ github.workspace }}/artifacts/all.log
-          ls -R >> ${{ github.workspace }}/artifacts/all.log 2>&1
+          # Create main directories
+          mkdir -p ${{ env.ARTIFACT_DIR }}/{logs,docker,system,tests}
+          
+          # Create subdirectories for different types of logs
+          mkdir -p ${{ env.ARTIFACT_DIR }}/logs/{services,build,test}
+          mkdir -p ${{ env.ARTIFACT_DIR }}/docker/{images,compose,network}
+          mkdir -p ${{ env.ARTIFACT_DIR }}/system/{info,resources}
+          
+          echo "Created artifact directory structure at ${{ env.ARTIFACT_DIR }}"
+          ls -R ${{ env.ARTIFACT_DIR }}
 
-      # Upload logs as artifacts
-      - name: Upload logs
+      # Collect detailed logs for each service
+      - name: Collect service logs
+        if: always()
+        run: |
+          # All services combined
+          echo "=== Service Logs ===" > ${{ env.ARTIFACT_DIR }}/logs/services/all_services.log
+          docker compose logs --timestamps --tail=1000 >> ${{ env.ARTIFACT_DIR }}/logs/services/all_services.log
+
+          # Individual service logs
+          for service in api-gateway menu-service order-service payment-service inventory-service customer-service; do
+            echo "=== $service Logs ===" > ${{ env.ARTIFACT_DIR }}/logs/services/${service}.log
+            docker compose logs --timestamps $service >> ${{ env.ARTIFACT_DIR }}/logs/services/${service}.log
+          done
+
+      # Collect Docker-related information
+      - name: Collect Docker information
+        if: always()
+        run: |
+          # Docker images
+          echo "=== Docker Images ===" > ${{ env.ARTIFACT_DIR }}/docker/images/images.log
+          docker images --all --digests >> ${{ env.ARTIFACT_DIR }}/docker/images/images.log 2>&1
+          
+          # Docker compose status
+          echo "=== Docker Compose Status ===" > ${{ env.ARTIFACT_DIR }}/docker/compose/status.log
+          docker compose ps --all >> ${{ env.ARTIFACT_DIR }}/docker/compose/status.log 2>&1
+          
+          # Docker network information
+          echo "=== Docker Network Info ===" > ${{ env.ARTIFACT_DIR }}/docker/network/network.log
+          docker network ls >> ${{ env.ARTIFACT_DIR }}/docker/network/network.log 2>&1
+          docker network inspect cafe-network >> ${{ env.ARTIFACT_DIR }}/docker/network/network.log 2>&1
+
+      # Collect system information
+      - name: Collect system information
+        if: always()
+        run: |
+          # System info
+          echo "=== System Information ===" > ${{ env.ARTIFACT_DIR }}/system/info/system.log
+          uname -a >> ${{ env.ARTIFACT_DIR }}/system/info/system.log 2>&1
+          
+          # Resource usage
+          echo "=== Resource Usage ===" > ${{ env.ARTIFACT_DIR }}/system/resources/usage.log
+          df -h >> ${{ env.ARTIFACT_DIR }}/system/resources/usage.log 2>&1
+          free -h >> ${{ env.ARTIFACT_DIR }}/system/resources/usage.log 2>&1
+          top -b -n 1 >> ${{ env.ARTIFACT_DIR }}/system/resources/usage.log 2>&1
+
+      # Create summary file
+      - name: Create summary
+        if: always()
+        run: |
+          {
+            echo "# Workflow Run Summary"
+            echo "## Build Information"
+            echo "- Run ID: ${{ github.run_id }}"
+            echo "- Run Number: ${{ github.run_number }}"
+            echo "- Workflow: ${{ github.workflow }}"
+            echo "- Repository: ${{ github.repository }}"
+            echo "- Branch: ${{ github.ref }}"
+            echo "- Commit: ${{ github.sha }}"
+            echo "## Directory Structure"
+            echo '```'
+            ls -R ${{ env.ARTIFACT_DIR }}
+            echo '```'
+          } > ${{ env.ARTIFACT_DIR }}/summary.md
+
+      # Upload all artifacts with proper retention
+      - name: Upload workflow artifacts
         if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: service-logs
-          path: ${{ github.workspace }}/artifacts/
+          name: workflow-artifacts
+          path: ${{ env.ARTIFACT_DIR }}
           retention-days: 5
+          if-no-files-found: error
 
       # Clean up
       - name: Cleanup
